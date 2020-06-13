@@ -1,3 +1,4 @@
-# Ignore content built with CMake
+.idea/
 build/
+cmake-build-debug/
 
