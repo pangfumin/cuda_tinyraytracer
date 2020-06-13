@@ -98,7 +98,7 @@ bool scene_intersect(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphe
     return std::min(spheres_dist, checkerboard_dist)<1000;
 }
 
-__host__ __device__
+//__host__ __device__
 Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, const std::vector<Light> &lights, size_t depth=0) {
     Vec3f point, N;
     Material material;
@@ -131,21 +131,100 @@ Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &s
     return material.diffuse_color * diffuse_light_intensity * material.albedo[0] + Vec3f(1., 1., 1.)*specular_light_intensity * material.albedo[1] + reflect_color*material.albedo[2] + refract_color*material.albedo[3];
 }
 
+__global__ void render_kernel( Sphere* spheres, Light* lights,
+                                int sphere_cnt,
+                                int light_cnt,
+                               int width,
+                               int height,
+                               float fov,
+                               Vec3f* framebuffer) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    int j = threadIdx.y + blockIdx.y * blockDim.y;
+//    printf("width height %d %d \n", width, height);
+    if((i >= width) || (j >= height)) return;
+    int pixel_index = j*width + i;
+
+    // todo
+    framebuffer[pixel_index] = Vec3f(0.7,0.3,0.5);
+
+
+}
+
+
 void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights) {
     const int   width    = 1200;
     const int   height   = 800;
     const float fov      = M_PI/3.;
     std::vector<Vec3f> framebuffer(width*height);
 
-    #pragma omp parallel for
-    for (size_t j = 0; j<height; j++) { // actual rendering loop
-        for (size_t i = 0; i<width; i++) {
-            float dir_x =  (i + 0.5) -  width/2.;
-            float dir_y = -(j + 0.5) + height/2.;    // this flips the image at the same time
-            float dir_z = -height/(2.*tan(fov/2.));
-            framebuffer[i+j*width] = cast_ray(Vec3f(0,0,0), Vec3f(dir_x, dir_y, dir_z).normalize(), spheres, lights);
-        }
-    }
+//    #pragma omp parallel for
+//    for (size_t j = 0; j<height; j++) { // actual rendering loop
+//        for (size_t i = 0; i<width; i++) {
+//            float dir_x =  (i + 0.5) -  width/2.;
+//            float dir_y = -(j + 0.5) + height/2.;    // this flips the image at the same time
+//            float dir_z = -height/(2.*tan(fov/2.));
+//            framebuffer[i+j*width] = cast_ray(Vec3f(0,0,0), Vec3f(dir_x, dir_y, dir_z).normalize(), spheres, lights);
+//        }
+//    }
+//
+//    std::ofstream ofs; // save the framebuffer to file
+//    ofs.open("./out.ppm",std::ios::binary);
+//    ofs << "P6\n" << width << " " << height << "\n255\n";
+//    for (size_t i = 0; i < height*width; ++i) {
+//        Vec3f &c = framebuffer[i];
+//        float max = std::max(c[0], std::max(c[1], c[2]));
+//        if (max>1) c = c*(1./max);
+//        for (size_t j = 0; j<3; j++) {
+//            ofs << (char)(255 * std::max(0.f, std::min(1.f, framebuffer[i][j])));
+//        }
+//    }
+//    ofs.close();
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+    //// CUDA
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+    std::cout << "cuda: " << std::endl;
+    const int threadsPerBlock = 16;
+    const int blocksPerGrid_x =
+            (width+threadsPerBlock-1) / threadsPerBlock ;
+    const int blocksPerGrid_y =
+            (height+threadsPerBlock-1) / threadsPerBlock ;
+
+    Sphere* dev_spheres;
+    Light* dev_lights;
+
+    int sphere_cnt = spheres.size();
+    int light_cnt = lights.size();
+
+    Vec3f* dev_framebuffer;
+
+
+    // alloc constant
+    checkCudaErrors( cudaMalloc( (void**)&dev_spheres, spheres.size() * sizeof(Sphere) ) );
+    checkCudaErrors( cudaMemcpy( dev_spheres, spheres.data(), spheres.size() * sizeof(Sphere), cudaMemcpyHostToDevice ) );
+
+    checkCudaErrors( cudaMalloc( (void**)&dev_lights, lights.size() * sizeof(Light) ) );
+    checkCudaErrors( cudaMemcpy( dev_lights, lights.data(), lights.size() * sizeof(Light), cudaMemcpyHostToDevice ) );
+
+
+    // alloc variation
+    checkCudaErrors( cudaMalloc( (void**)&dev_framebuffer, width*height * sizeof(Vec3f) ) );
+
+
+    std::cout << "blocksPerGrid_x: " << blocksPerGrid_x << " " << blocksPerGrid_y << " " << threadsPerBlock << std::endl;
+    // launch kernel
+    dim3 blocks(blocksPerGrid_x, blocksPerGrid_y);
+    dim3 threads(threadsPerBlock,threadsPerBlock);
+
+    render_kernel<<<blocks, threads>>>(dev_spheres, dev_lights,
+                                       sphere_cnt, light_cnt,
+                                        width, height,
+                                       fov,
+                                       dev_framebuffer);
+
+    // fetch
+    checkCudaErrors( cudaMemcpy( framebuffer.data(), dev_framebuffer,  width*height * sizeof(Vec3f), cudaMemcpyDeviceToHost ) );
 
     std::ofstream ofs; // save the framebuffer to file
     ofs.open("./out.ppm",std::ios::binary);
@@ -159,6 +238,10 @@ void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights
         }
     }
     ofs.close();
+
+
+
+
 }
 
 int main() {
