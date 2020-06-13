@@ -25,3 +25,29 @@ file(GLOB SOURCES *.h *.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
+#######################################################################################
+# CUDA
+#######################################################################################
+
+find_package(CUDA)
+set(CUDA_SOURCE_PROPERTY_FORMAT OBJ)
+set(CUDA_SEPARABLE_COMPILATION ON)
+set(CUDA_PROPAGATE_HOST_FLAGS OFF)
+set(CUDA_NVCC_FLAGS -arch=sm_60;-O3;-G;-g;-std=c++11)
+
+file(GLOB CUDA_SOURCES *.h *.cu)
+
+
+include_directories(
+        ${CUDA_INCLUDE_DIRS}
+)
+
+CUDA_ADD_EXECUTABLE(cuda_tinyraytracer ${CUDA_SOURCES})
+
+target_link_libraries(cuda_tinyraytracer
+        ${CUDA_LIBRARIES}
+)
+
+
+
+
