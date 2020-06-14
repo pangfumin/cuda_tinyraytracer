@@ -33,9 +33,11 @@ template <typename T> struct vec<3,T> {
     __host__ __device__       T& operator[](const size_t i)       { assert(i<3); return i<=0 ? x : (1==i ? y : z); }
     __host__ __device__ const T& operator[](const size_t i) const { assert(i<3); return i<=0 ? x : (1==i ? y : z); }
     __host__ __device__ float norm() { return std::sqrt(x*x+y*y+z*z); }
-    __host__ __device__ vec<3,T> & normalize(T l=1) { *this = (*this)*(l/norm()); return *this; }
+    __host__ __device__ vec<3,T>  normalize(T l=1) { float t = (T)1.0 / norm(); return vec<3,T>(x*t, y*t,z*t); }
     T x,y,z;
 };
+
+
 
 template <typename T> struct vec<4,T> {
     __host__ __device__ vec() : x(T()), y(T()), z(T()), w(T()) {}
@@ -80,6 +82,19 @@ template <typename T>
 __host__ __device__ vec<3,T> cross(vec<3,T> v1, vec<3,T> v2) {
     return vec<3,T>(v1.y*v2.z - v1.z*v2.y, v1.z*v2.x - v1.x*v2.z, v1.x*v2.y - v1.y*v2.x);
 }
+
+__host__ __device__ Vec3f operator*(const Vec3f &v, float t) {
+    return Vec3f(t*v.x, t*v.y, t*v.z);
+}
+
+//__host__ __device__ Vec3f unit_vector(Vec3f v) {
+//    float t =  1.0/v.norm();
+//    return Vec3f(t*v.x, t*v.y, t*v.z);
+//
+//}
+
+
+
 
 template <size_t DIM, typename T> std::ostream& operator<<(std::ostream& out, const vec<DIM,T>& v) {
     for(unsigned int i=0; i<DIM; i++) out << v[i] << " " ;
