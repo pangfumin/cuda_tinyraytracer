@@ -2,7 +2,7 @@
 
 Toy code for CUDA implementation of tinyraytracer.Not finished yet.
 
-![](https://raw.githubusercontent.com/pangfumin/cuda_tinyraytracer/master/out.ppm)
+![](https://raw.githubusercontent.com/pangfumin/cuda_tinyraytracer/master/out.png)
 
 
 
