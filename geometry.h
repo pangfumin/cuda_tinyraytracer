@@ -107,7 +107,9 @@ __host__ __device__ inline Vec3f cross(const Vec3f &v1, const Vec3f &v2) {
                  (v1.x*v2.y - v1.y*v2.x));
 }
 
-
+__host__ __device__ inline Vec3f element_dot(const Vec3f &v1, const Vec3f &v2) {
+    return Vec3f (v1.x *v2.x, v1.y *v2.y, v1.z *v2.z);
+}
 
 
 template <size_t DIM, typename T> std::ostream& operator<<(std::ostream& out, const vec<DIM,T>& v) {

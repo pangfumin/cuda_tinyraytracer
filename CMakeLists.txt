@@ -21,9 +21,7 @@ enable_cxx_compiler_flag_if_supported("-std=c++11")
 enable_cxx_compiler_flag_if_supported("-O3")
 enable_cxx_compiler_flag_if_supported("-fopenmp")
 
-file(GLOB SOURCES *.h *.cpp)
 
-add_executable(${PROJECT_NAME} ${SOURCES})
 
 #######################################################################################
 # CUDA
@@ -33,7 +31,8 @@ find_package(CUDA)
 set(CUDA_SOURCE_PROPERTY_FORMAT OBJ)
 set(CUDA_SEPARABLE_COMPILATION ON)
 set(CUDA_PROPAGATE_HOST_FLAGS OFF)
-set(CUDA_NVCC_FLAGS -arch=sm_60;-O3;-G;-g;-std=c++11)
+set(CUDA_NVCC_FLAGS -O3;-G;-g;-std=c++11)
+string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_60,code=sm_60")
 
 file(GLOB CUDA_SOURCES *.h *.cu)
 
