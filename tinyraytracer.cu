@@ -6,8 +6,10 @@
 #include <vector>
 #include <algorithm>
 #include "geometry.h"
+//#include "material.h"
 #include <cuda_runtime_api.h>
 #include <cuda.h>
+#include <cfloat>
 
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
 void check_cuda(cudaError_t result, char const *const func, const char *const file, int const line) {
@@ -20,6 +22,25 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
     }
 }
 
+
+
+struct Ray {
+    __device__ Ray() {}
+    __device__ Ray(const Vec3f& a, const Vec3f& b) { A = a; B = b; }
+    __device__ Vec3f origin() const       { return A; }
+    __device__ Vec3f direction() const    { return B; }
+    __device__ Vec3f point_at_parameter(float t) const { return A + t*B; }
+
+    Vec3f A;
+    Vec3f B;
+};
+
+struct HitRecord
+{
+    float t;
+    Vec3f p;
+    Vec3f normal;
+};
 
 struct Light {
     __host__ __device__ Light(const Vec3f &p, const float i) : position(p), intensity(i) {}
@@ -41,20 +62,34 @@ struct Sphere {
     float radius;
     Material material;
 
-    __host__ __device__ Sphere(const Vec3f &c, const float r, const Material &m) : center(c), radius(r), material(m) {}
+    __host__ __device__ Sphere(const Vec3f &c, const float r, const Material& m) : center(c), radius(r), material(m) {}
 
-    __host__ __device__ bool ray_intersect(const Vec3f &orig, const Vec3f &dir, float &t0) const {
-        Vec3f L = center - orig;
-        float tca = L*dir;
-        float d2 = L*L - tca*tca;
-        if (d2 > radius*radius) return false;
-        float thc = sqrtf(radius*radius - d2);
-        t0       = tca - thc;
-        float t1 = tca + thc;
-        if (t0 < 0) t0 = t1;
-        if (t0 < 0) return false;
-        return true;
+    __device__ bool hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const {
+        Vec3f oc = r.origin() - center;
+        float a = dot(r.direction(), r.direction());
+        float b = dot(oc, r.direction());
+        float c = dot(oc, oc) - radius*radius;
+        float discriminant = b*b - a*c;
+        if (discriminant > 0) {
+            float temp = (-b - sqrt(discriminant))/a;
+            if (temp < t_max && temp > t_min) {
+                rec.t = temp;
+                rec.p = r.point_at_parameter(rec.t);
+                rec.normal = (rec.p - center) * ((float)1.0 / radius);
+                return true;
+            }
+            temp = (-b + sqrt(discriminant)) / a;
+            if (temp < t_max && temp > t_min) {
+                rec.t = temp;
+                rec.p = r.point_at_parameter(rec.t);
+                rec.normal = (rec.p - center)* ((float)1.0 / radius);
+                return true;
+            }
+        }
+        return false;
     }
+
+
 };
 
 __host__ __device__
@@ -71,39 +106,26 @@ Vec3f refract(const Vec3f &I, const Vec3f &N, const float eta_t, const float eta
     return k<0 ? Vec3f(1,0,0) : I*eta + N*(eta*cosi - sqrtf(k)); // k<0 = total reflection, no ray to refract. I refract it anyways, this has no physical meaning
 }
 
-__host__ __device__
-bool scene_intersect(const Vec3f &orig, const Vec3f &dir, const int sphere_cnt, const Sphere* spheres, Vec3f &hit, Vec3f &N, Material &material) {
-    float spheres_dist = std::numeric_limits<float>::max();
-    for (size_t i=0; i < sphere_cnt; i++) {
-        float dist_i;
-        if (spheres[i].ray_intersect(orig, dir, dist_i) && dist_i < spheres_dist) {
-            spheres_dist = dist_i;
-            hit = orig + dir*dist_i;
-            N = (hit - spheres[i].center).normalize();
-            material = spheres[i].material;
-        }
-    }
-//    printf("N: %f %f %f\n", N.x, N.y, N.z);
-
-    float checkerboard_dist = std::numeric_limits<float>::max();;
-    if (fabs(dir.y)>1e-3)  {
-        float d = -(orig.y+4)/dir.y; // the checkerboard plane has equation y = -4
-        Vec3f pt = orig + dir*d;
-//        printf("N: %f %f %f %f\n", pt.x, pt.y, pt.z, d);
-        if (d>0 && fabs(pt.x)<10 && pt.z<-10 && pt.z>-30 && d<spheres_dist) {
-            checkerboard_dist = d;
-            hit = pt;
-            N = Vec3f(0,1,0);
-            material.diffuse_color = (int(.5*hit.x+1000) + int(.5*hit.z)) & 1 ? Vec3f(.3, .3, .3) : Vec3f(.3, .2, .1);
-        }
-    }
-//    printf("N: %f %f %f\n", N.x, N.y, checkerboard_dist);
-    float dis = spheres_dist< checkerboard_dist? spheres_dist : checkerboard_dist;
-    return  dis <1000;
-}
 
 __device__
-Vec3f cast_ray(Vec3f orig, Vec3f dir, int sphere_cnt, int light_cnt, Sphere* spheres, Light* lights) {
+bool hit(const Ray &ray, float t_min, float t_max,  const int sphere_cnt, const Sphere* spheres, HitRecord& rec) {
+    HitRecord temp_rec;
+    bool hit_anything = false;
+    float closest_so_far = t_max;
+    for (int i = 0; i < sphere_cnt; i++) {
+        if (spheres[i].hit(ray, t_min, closest_so_far, temp_rec)) {
+            hit_anything = true;
+            closest_so_far = temp_rec.t;
+            rec = temp_rec;
+        }
+    }
+    return hit_anything;
+}
+
+
+
+__device__
+Vec3f cast_ray(Ray& ray, int sphere_cnt, int light_cnt, Sphere* spheres, Light* lights) {
     Vec3f point, N;
     Material material;
 //
@@ -138,15 +160,37 @@ Vec3f cast_ray(Vec3f orig, Vec3f dir, int sphere_cnt, int light_cnt, Sphere* sph
 //            + refract_color*material.albedo[3];
 
     //
-    if (scene_intersect(orig, dir, sphere_cnt, spheres, point, N, material)) {
-        return Vec3f(N.x+1.0f,N.y+1.0f,N.z+1.0f) * 0.5f;
-//        return Vec3f(0.2, 0.7, 0.8); // background color
-    } else {
-        return Vec3f(0.2, 0.7, 0.8); // background color
+//    HitRecord rec;
+//    if (hit(ray, 0.001f, FLT_MAX, sphere_cnt, spheres, rec)) {
+////        return Vec3f(N.x+1.0f,N.y+1.0f,N.z+1.0f) * 0.5f;
+////        return Vec3f(0.2, 0.7, 0.8); // background color
+//        return 0.5f*Vec3f(rec.normal.x+1.0f, rec.normal.y+1.0f, rec.normal.z+1.0f);
+//    } else {
+////        return Vec3f(0.2, 0.7, 0.8); // background color
+//        Vec3f unit_direction = (ray.direction());
+//        float t = 0.5f*(unit_direction.y + 1.0f);
+//        return Vec3f(1.0, 1.0, 1.0)*(1.0f-t) + Vec3f(0.5, 0.7, 1.0)*t;
+//    }
 
+    Ray cur_ray = ray;
+    float cur_attenuation = 1.0f;
+    for(int i = 0; i < 50; i++) {
+        HitRecord rec;
+        if (hit(cur_ray, 0.001f, FLT_MAX, sphere_cnt, spheres, rec)) {
+            Vec3f target = rec.p + rec.normal /* + random_in_unit_sphere(local_rand_state) */;
+            cur_attenuation *= 0.5f;
+            cur_ray = Ray(rec.p, target-rec.p);
+        }
+        else {
+            Vec3f unit_direction = (cur_ray.direction()).normalize();
+            float t = 0.5f*(unit_direction.y + 1.0f);
+            Vec3f c = (1.0f-t)*Vec3f(1.0, 1.0, 1.0) + t*Vec3f(0.5, 0.7, 1.0);
+            return cur_attenuation * c;
+        }
     }
+    return Vec3f(0.0,0.0,0.0); // exceeded recursion
 
-//     return Vec3f(0.2, 0.7, 0.8); // background color
+
 }
 
 __device__ Vec3f getcolor(Vec3f orig, Vec3f dir, int sphere_cnt, int light_cnt, Sphere* spheres, Light* lights) {
@@ -172,7 +216,8 @@ __global__ void render_kernel( Sphere* spheres, Light* lights,
 //    printf("width height %d %d %f %f %f\n", width, height, dir_x, dir_y, dir_z);
 
     // todo
-    Vec3f color = cast_ray(Vec3f(0,0,0), (Vec3f(dir_x, dir_y, dir_z)).normalize(),
+    Ray ray(Vec3f(0,0,0), (Vec3f(dir_x, dir_y, dir_z)).normalize());
+    Vec3f color = cast_ray(ray,
             sphere_cnt, light_cnt, spheres, lights);
 
     framebuffer[pixel_index] = color;
@@ -281,6 +326,7 @@ int main() {
     spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2,      glass));
     spheres.push_back(Sphere(Vec3f( 1.5, -0.5, -18), 3, red_rubber));
     spheres.push_back(Sphere(Vec3f( 7,    5,   -18), 4,     mirror));
+    spheres.push_back(Sphere(Vec3f( 0,    -100,   0), 95,     mirror));
 
     std::vector<Light>  lights;
     lights.push_back(Light(Vec3f(-20, 20,  20), 1.5));

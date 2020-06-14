@@ -87,11 +87,25 @@ __host__ __device__ Vec3f operator*(const Vec3f &v, float t) {
     return Vec3f(t*v.x, t*v.y, t*v.z);
 }
 
+__host__ __device__ Vec3f operator*(float t, const Vec3f &v) {
+    return Vec3f(t*v.x, t*v.y, t*v.z);
+}
+
 //__host__ __device__ Vec3f unit_vector(Vec3f v) {
 //    float t =  1.0/v.norm();
 //    return Vec3f(t*v.x, t*v.y, t*v.z);
 //
 //}
+
+__host__ __device__ inline float dot(const Vec3f &v1, const Vec3f &v2) {
+    return v1.x *v2.x + v1.y *v2.y  + v1.z *v2.z;
+}
+
+__host__ __device__ inline Vec3f cross(const Vec3f &v1, const Vec3f &v2) {
+    return Vec3f( (v1.y*v2.z - v1.z*v2.y),
+                 (-(v1.x*v2.z - v1.z*v2.x)),
+                 (v1.x*v2.y - v1.y*v2.x));
+}
 
 
 
