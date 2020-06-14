@@ -1,3 +1,11 @@
+# CUDA  RayTracing
+
+Toy code for CUDA implementation of tinyraytracer.Not finished yet.
+
+![](https://raw.githubusercontent.com/pangfumin/cuda_tinyraytracer/master/out.ppm)
+
+
+
 # Understandable RayTracing in 256 lines of bare C++
 
 This repository is a support code for my computer graphics lectures. It is not meant to be the ultimate rendering code or even physically realistic. It is meant to be **simple**. This project is distributed under the [DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE](https://en.wikipedia.org/wiki/WTFPL).
